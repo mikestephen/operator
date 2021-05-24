@@ -49,6 +49,7 @@ const (
 	nodeCniConfigAnnotation     = "hash.operator.tigera.io/cni-config"
 	CSRLabelCalicoSystem        = "calico-system"
 	K8sSvcEndpointConfigMapName = "kubernetes-services-endpoint"
+	nodeTerminationGracePeriodSeconds = 5
 )
 
 var (
@@ -548,7 +549,7 @@ func (c *nodeComponent) clusterAdminClusterRoleBinding() *rbacv1.ClusterRoleBind
 
 // nodeDaemonset creates the node daemonset.
 func (c *nodeComponent) nodeDaemonset(cniCfgMap *v1.ConfigMap) *apps.DaemonSet {
-	var terminationGracePeriod int64 = 0
+	var terminationGracePeriod int64 = nodeTerminationGracePeriodSeconds
 	var initContainers []v1.Container
 
 	annotations := make(map[string]string)
@@ -874,6 +875,7 @@ func (c *nodeComponent) nodeContainer() v1.Container {
 		VolumeMounts:    c.nodeVolumeMounts(),
 		LivenessProbe:   lp,
 		ReadinessProbe:  rp,
+		Lifecycle:       c.nodeLifecycle(),
 	}
 }
 
@@ -1224,6 +1226,15 @@ func (c *nodeComponent) nodeEnvVars() []v1.EnvVar {
 	nodeEnv = append(nodeEnv, c.k8sServiceEp.EnvVars()...)
 
 	return nodeEnv
+}
+
+// nodeLifecycle creates the node's postStart and preStop hooks.
+func (c *nodeComponent) nodeLifecycle() *v1.Lifecycle {
+	preStopCmd := []string{"/bin/calico-node", "-shutdown"}
+	lc := &v1.Lifecycle{
+		PreStop: &v1.Handler{Exec: &v1.ExecAction{Command: preStopCmd}},
+	}
+	return lc
 }
 
 // nodeLivenessReadinessProbes creates the node's liveness and readiness probes.
